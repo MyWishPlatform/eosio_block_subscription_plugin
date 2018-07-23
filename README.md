@@ -29,3 +29,10 @@ Compile:
 eos/build]$ make
 eos/build]$ sudo make install
 ```
+
+<br />
+
+Add to config.ini:
+```
+plugin = eosio::block_subscription_plugin
+```
