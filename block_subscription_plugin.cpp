@@ -43,8 +43,9 @@ namespace eosio {
 			this->chain_plugin_ref.get_abi_serializer_max_time();
 			fc::variant output;
 			abi_serializer::to_variant(static_cast<const chain::signed_block&>(*block), output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
+			std::string json = fc::json::to_string(output);
 			for (auto connection : this->connections) {
-				this->server.send(connection, fc::json::to_string(output), websocketpp::frame::opcode::text);
+				this->server.send(connection, json, websocketpp::frame::opcode::text);
 			}
 		}
 	};
