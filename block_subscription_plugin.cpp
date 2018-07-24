@@ -40,7 +40,6 @@ namespace eosio {
 		}
 
 		void on_block(const chain::signed_block_ptr& block) {
-			this->chain_plugin_ref.get_abi_serializer_max_time();
 			fc::variant output;
 			abi_serializer::to_variant(static_cast<const chain::signed_block&>(*block), output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
 			std::string json = fc::json::to_string(output);
