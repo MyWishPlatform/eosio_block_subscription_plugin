@@ -20,11 +20,11 @@ namespace eosio {
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
 		chain_plugin& chain_plugin_ref;
 
-		block_subscription_plugin_impl(chain_plugin& chain_plugin_ref) :
+		block_subscription_plugin_impl() :
 			resolver([](const account_name& name) {
 				return fc::optional<abi_serializer>();
 			}),
-			chain_plugin_ref(chain_plugin_ref)
+			chain_plugin_ref(app().get_plugin<chain_plugin>())
 		{
 			this->server.clear_access_channels(websocketpp::log::alevel::all);
 			this->server.init_asio(&app().get_io_service());
@@ -51,9 +51,7 @@ namespace eosio {
 	};
 
 	block_subscription_plugin::block_subscription_plugin() :
-		my(new block_subscription_plugin_impl(
-			app().get_plugin<chain_plugin>()
-		))
+		my(new block_subscription_plugin_impl())
 	{}
 
 	block_subscription_plugin::~block_subscription_plugin(){}
