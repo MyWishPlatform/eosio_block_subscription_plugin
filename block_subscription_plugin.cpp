@@ -3,18 +3,81 @@
 #include <eosio/chain/plugin_interface.hpp>
 #include <eosio/chain/block.hpp>
 #include <boost/signals2/connection.hpp>
+#include <boost/asio.hpp>
 #include <fc/io/json.hpp>
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
 
 namespace eosio {
 	static appbase::abstract_plugin& _block_subscription_plugin = app().register_plugin<block_subscription_plugin>();
 
+	class tcp_server {
+	private:
+		struct connection {
+			bool enabled;
+			boost::asio::ip::tcp::socket socket;
+
+			connection(boost::asio::io_service& io_service) :
+				enabled(true),
+				socket(io_service)
+			{}
+
+			void send(std::string string) {
+				boost::asio::write(this->socket, boost::asio::buffer(string));
+			}
+		};
+
+		boost::asio::ip::tcp::acceptor acceptor;
+		std::vector<connection*> connections;
+
+		void start_accept() {
+			connection* conn = new connection(this->acceptor.get_io_service());
+			this->acceptor.async_accept(conn->socket, [this, conn](boost::system::error_code ec) {
+				ilog("client subscribed to blocks");
+				this->connections.push_back(conn);
+				conn->socket.async_receive(boost::asio::null_buffers(), [conn](boost::system::error_code err, size_t) {
+					if (err == boost::asio::error::eof || err == boost::asio::error::connection_reset) {
+						conn->enabled = false;
+						ilog("client unsubscribed from blocks");
+					}
+				});
+				this->start_accept();
+			});
+		}
+
+	public:
+		tcp_server(uint16_t port) :
+			acceptor(app().get_io_service())
+		{
+			this->acceptor.open(boost::asio::ip::tcp::v4());
+			this->acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+			this->acceptor.bind({{}, port});
+			this->acceptor.listen();
+			this->start_accept();
+		}
+
+		~tcp_server() {
+			for (connection* conn : this->connections) {
+				delete conn;
+			}
+			this->acceptor.close();
+		}
+
+		void broadcast(std::string string) {
+			auto it = this->connections.end();
+			std::for_each(this->connections.rbegin(), this->connections.rend(), [this, &it, string](connection* conn) {
+				it--;
+				if (conn->enabled) {
+					conn->send(string);
+				} else {
+					this->connections.erase(it);
+				}
+			});
+		}
+	};
+
 	class block_subscription_plugin_impl {
 	private:
-		websocketpp::server<websocketpp::config::asio> server;
-		std::set<websocketpp::connection_hdl, std::owner_less<websocketpp::connection_hdl>> connections;
 		fc::optional<abi_serializer> (*resolver)(const account_name&);
+		tcp_server server;
 
 	public:
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
@@ -24,28 +87,15 @@ namespace eosio {
 			resolver([](const account_name& name) {
 				return fc::optional<abi_serializer>();
 			}),
+			server(56732), // TODO: load from config
 			chain_plugin_ref(app().get_plugin<chain_plugin>())
 		{
-			this->server.clear_access_channels(websocketpp::log::alevel::all);
-			this->server.init_asio(&app().get_io_service());
-			this->server.set_reuse_addr(true);
-			this->server.set_open_handler([this](websocketpp::connection_hdl hdl) {
-				this->connections.insert(hdl);
-			});
-			this->server.set_close_handler([this](websocketpp::connection_hdl hdl) {
-				this->connections.erase(hdl);
-			});
-			this->server.listen(8886); // TODO: load port from config
-			this->server.start_accept();
 		}
 
 		void on_block(const chain::signed_block_ptr& block) {
 			fc::variant output;
 			abi_serializer::to_variant(static_cast<const chain::signed_block&>(*block), output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
-			std::string json = fc::json::to_string(output);
-			for (auto connection : this->connections) {
-				this->server.send(connection, json, websocketpp::frame::opcode::text);
-			}
+			this->server.broadcast(fc::json::to_string(output));
 		}
 	};
 
