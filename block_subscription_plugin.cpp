@@ -33,9 +33,11 @@ namespace eosio {
 			this->acceptor.async_accept(conn->socket, [this, conn](boost::system::error_code ec) {
 				ilog("client subscribed to blocks");
 				this->connections.push_back(conn);
-				conn->socket.async_receive(boost::asio::null_buffers(), [conn](boost::system::error_code err, size_t) {
+				char* buffer = new char[8];
+				conn->socket.async_receive(boost::asio::buffer(buffer, 8), 0, [conn, buffer](boost::system::error_code err, size_t) {
 					if (err == boost::asio::error::eof || err == boost::asio::error::connection_reset) {
 						conn->enabled = false;
+						delete[] buffer;
 						ilog("client unsubscribed from blocks");
 					}
 				});
