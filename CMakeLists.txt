@@ -1,6 +1,7 @@
 file(GLOB HEADERS "include/eosio/block_subscription_plugin/*.hpp")
 add_library( block_subscription_plugin
              block_subscription_plugin.cpp
+             tcp_server.cpp
              ${HEADERS} )
 
 target_link_libraries( block_subscription_plugin chain_plugin appbase fc )
