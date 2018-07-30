@@ -2,28 +2,32 @@
 #include <fc/log/logger.hpp>
 
 void tcp_server::do_accept() {
-	connection* conn = new connection(this->acceptor.get_io_service());
-	this->acceptor.async_accept(conn->socket, [this, conn](boost::system::error_code ec) {
-		ilog("client subscribed to blocks");
-		this->connections.push_back(conn);
-		this->do_session(conn);
+	boost::asio::ip::tcp::socket* socket = new boost::asio::ip::tcp::socket(this->acceptor.get_io_service());
+	this->acceptor.async_accept(*socket, [this, socket](boost::system::error_code ec) {
+		this->do_session(socket);
 		this->do_accept();
 	});
 }
 
-void tcp_server::do_session(connection* conn) {
+void tcp_server::do_session(boost::asio::ip::tcp::socket* const socket) {
 	char* buffer = new char[32];
-	conn->socket.async_receive(boost::asio::buffer(buffer, 32), 0, [this, conn, buffer](boost::system::error_code err, size_t bytes) {
+	socket->async_receive(boost::asio::buffer(buffer, 32), 0, [this, socket, buffer](boost::system::error_code err, size_t bytes) {
 		if (err == boost::asio::error::eof || err == boost::asio::error::connection_reset) {
-			conn->enabled = false;
-			ilog("client unsubscribed from blocks");
-			delete[] buffer;
+//			delete[] buffer;
+			this->disconnect_handler(socket);
+			delete socket;
 		} else {
-			this->message_handler(conn, std::stringstream(std::string(buffer, bytes)));
-			delete[] buffer;
-			do_session(conn);
+			this->message_handler(socket, std::stringstream(std::string(buffer, bytes)));
+//			delete[] buffer;
+			do_session(socket);
 		}
 	});
+}
+
+void tcp_server::send(boost::asio::ip::tcp::socket* const socket, std::string string) {
+	int size = string.size();
+	boost::asio::write(*socket, boost::asio::buffer(static_cast<char*>(static_cast<void*>(&size)), 4));
+	boost::asio::write(*socket, boost::asio::buffer(string));
 }
 
 tcp_server::tcp_server(boost::asio::io_service& io_service, uint16_t port) :
@@ -37,12 +41,13 @@ tcp_server::tcp_server(boost::asio::io_service& io_service, uint16_t port) :
 }
 
 tcp_server::~tcp_server() {
-	for (connection* conn : this->connections) {
-		delete conn;
-	}
 	this->acceptor.close();
 }
 
-void tcp_server::on_message(std::function<void(connection* const, std::stringstream)> handler) {
+void tcp_server::on_message(std::function<void(boost::asio::ip::tcp::socket* const, std::stringstream)> handler) {
 	this->message_handler = handler;
+}
+
+void tcp_server::on_disconnect(std::function<void(boost::asio::ip::tcp::socket* const)> handler) {
+	this->disconnect_handler = handler;
 }

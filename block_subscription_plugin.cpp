@@ -12,18 +12,21 @@ namespace eosio {
 	class block_subscription_plugin_impl {
 	private:
 		struct client_t {
-			connection* const conn;
+			boost::asio::ip::tcp::socket* const socket;
 			uint32_t last_block;
 		};
 
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
-		std::vector<client_t*> clients;
+		std::set<client_t*> clients;
 		tcp_server server;
 
-		std::string block_to_json(chain::signed_block& block) {
+		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
 			abi_serializer::to_variant(block, output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
-			return fc::json::to_string(output);
+			return fc::json::to_string(fc::mutable_variant_object(output.get_object())
+				("id", block.id())
+				("block_num", block.block_num())
+			);
 		}
 
 	public:
@@ -37,44 +40,50 @@ namespace eosio {
 			server(app().get_io_service(), 56732), // TODO: load port from config
 			chain_plugin_ref(app().get_plugin<chain_plugin>())
 		{
-			server.on_message([this](connection* const conn, std::stringstream data) {
+			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
 				data >> msg;
 				switch (msg) {
 					case 's': {
 						for (client_t* client : this->clients) {
-							if (client->conn == conn) return;
+							if (client->socket == socket) return;
 						}
 						uint32_t last_block = this->chain_plugin_ref.chain().fork_db_head_block_num();
-						client_t* client = new client_t{
-							.conn = conn,
-							.last_block = last_block
-						};
 						uint32_t from_block;
 						data >> from_block;
-						for (uint32_t i = from_block; i < last_block; i++) {
-         					client->conn->send(this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
+						if (last_block - from_block > 10000) return;
+						client_t* client = new client_t{
+							.socket = socket,
+							.last_block = last_block
+						};
+						for (uint32_t i = from_block; i <= last_block; i++) {
+         					this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 						}
-						this->clients.push_back(client);
+						this->clients.insert(client);
+						ilog("client '" + socket->remote_endpoint().address().to_string() + "' subscribed to blocks");
+						break;
+					}
+				}
+			});
+			this->server.on_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
+				for (auto it = this->clients.begin(); it != this->clients.end(); it++) {
+					if ((*it)->socket == socket) {
+						this->clients.erase(it);
+						delete *it;
+						ilog("client '" + socket->remote_endpoint().address().to_string() + "' unsubscribed from blocks");
 						break;
 					}
 				}
 			});
 		}
 
-		void on_block(uint32_t block_num) {
-			auto it = this->clients.end();
-			std::for_each(this->clients.rbegin(), this->clients.rend(), [this, &it, block_num](client_t* client) {
-				it--;
-				if (!client->conn->enabled) {
-					delete *it;
-					this->clients.erase(it);
-					return;
+		void on_block(chain::signed_block& block) {
+			std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
+				for (uint32_t i = client->last_block+1; i < block.block_num(); i++) {
+					this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 				}
-				for (uint32_t i = client->last_block; i < block_num; i++) {
-					client->conn->send(this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i+1)));
-				}
-				client->last_block = block_num;
+				this->server.send(client->socket, this->block_to_json(block));
+				client->last_block = block.block_num();
 			});
 		}
 	};
@@ -93,7 +102,7 @@ namespace eosio {
 		ilog("starting block_subscription_plugin");
 		my->accepted_block_connection.emplace(
 			my->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
-				my->on_block(bsp->block->block_num());
+				my->on_block(*bsp->block);
 			})
 		);
 	}
