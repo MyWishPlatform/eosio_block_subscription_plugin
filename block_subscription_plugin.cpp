@@ -16,6 +16,7 @@ namespace eosio {
 		struct client_t {
 			boost::asio::ip::tcp::socket* const socket;
 			uint32_t last_block;
+			std::string addr;
 		};
 
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
@@ -59,32 +60,28 @@ namespace eosio {
 						}
 						client_t* client = new client_t{
 							.socket = socket,
-							.last_block = from_block
+							.last_block = from_block,
+							.addr = socket->remote_endpoint().address().to_string()
 						};
 						this->mutex.lock();
 						this->clients.push_back(client);
 						this->mutex.unlock();
-						ilog("client '" + socket->remote_endpoint().address().to_string() + "' subscribed to blocks");
+						ilog("client '" + client->addr + "' subscribed to blocks");
 						break;
 					}
 				}
 			});
 			this->server.on_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
-				ilog("on_disconnect");
 				this->mutex.lock();
 				this->clients.erase(std::remove_if(this->clients.begin(), this->clients.end(), [socket](client_t* client) {
-					ilog("1");
 					if (client->socket == socket) {
-						ilog("2");
-						ilog("client '" + socket->remote_endpoint().address().to_string() + "' unsubscribed from blocks");
+						ilog("client '" + client->addr + "' unsubscribed from blocks");
 						delete client;
 						return true;
 					}
-					ilog("3");
 					return false;
 				}), this->clients.end());
 				this->mutex.unlock();
-				ilog("~on_disconnect");
 			});
 		}
 
