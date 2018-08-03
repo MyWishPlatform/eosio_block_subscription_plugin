@@ -6,6 +6,8 @@
 #include <fc/io/json.hpp>
 #include "tcp_server.hpp"
 
+#define CHUNK_SIZE 100
+
 namespace eosio {
 	static appbase::abstract_plugin& _block_subscription_plugin = app().register_plugin<block_subscription_plugin>();
 
@@ -19,6 +21,7 @@ namespace eosio {
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
 		std::set<client_t*> clients;
 		tcp_server server;
+		std::mutex mutex;
 
 		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
@@ -51,40 +54,62 @@ namespace eosio {
 						uint32_t last_block = this->chain_plugin_ref.chain().fork_db_head_block_num();
 						uint32_t from_block;
 						data >> from_block;
-						if (last_block - from_block > 10000) return;
+						if (from_block > last_block || from_block == 0) {
+							from_block = last_block;
+						}
 						client_t* client = new client_t{
 							.socket = socket,
-							.last_block = last_block
+							.last_block = from_block
 						};
-						for (uint32_t i = from_block; i <= last_block; i++) {
-         					this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
-						}
+						this->mutex.lock();
 						this->clients.insert(client);
+						this->mutex.unlock();
 						ilog("client '" + socket->remote_endpoint().address().to_string() + "' subscribed to blocks");
 						break;
 					}
 				}
 			});
 			this->server.on_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
+				ilog("on_disconnect");
+				this->mutex.lock();
+				ilog("1");
 				for (auto it = this->clients.begin(); it != this->clients.end(); it++) {
+					ilog("2");
 					if ((*it)->socket == socket) {
+						ilog("3");
+//						delete *it;
+						ilog("4");
 						this->clients.erase(it);
-						delete *it;
 						ilog("client '" + socket->remote_endpoint().address().to_string() + "' unsubscribed from blocks");
 						break;
+						ilog("5");
 					}
+					ilog("6");
 				}
+				ilog("7");
+				this->mutex.unlock();
+				ilog("~on_disconnect");
 			});
 		}
 
 		void on_block(chain::signed_block& block) {
-			std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
-				for (uint32_t i = client->last_block+1; i < block.block_num(); i++) {
-					this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
-				}
-				this->server.send(client->socket, this->block_to_json(block));
-				client->last_block = block.block_num();
-			});
+			ilog("on_block");
+			this->mutex.lock();
+			try {
+				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
+					uint32_t from_block = client->last_block+1;
+					uint32_t to_block = block.block_num();
+					bool ready = (to_block - from_block) < CHUNK_SIZE;
+					if (!ready) to_block = from_block + CHUNK_SIZE;
+					for (uint32_t i = from_block; i < to_block; i++) {
+						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
+					}
+					if (ready) this->server.send(client->socket, this->block_to_json(block));
+					client->last_block = to_block - !ready;
+				});
+			} catch (...) {}
+			this->mutex.unlock();
+			ilog("~on_block");
 		}
 	};
 

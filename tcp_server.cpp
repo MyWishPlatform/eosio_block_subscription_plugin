@@ -13,12 +13,14 @@ void tcp_server::do_session(boost::asio::ip::tcp::socket* const socket) {
 	char* buffer = new char[32];
 	socket->async_receive(boost::asio::buffer(buffer, 32), 0, [this, socket, buffer](boost::system::error_code err, size_t bytes) {
 		if (err == boost::asio::error::eof || err == boost::asio::error::connection_reset) {
-//			delete[] buffer;
+			delete[] buffer;
+			ilog("disconnect_handler");
 			this->disconnect_handler(socket);
+			ilog("~disconnect_handler");
 			delete socket;
 		} else {
 			this->message_handler(socket, std::stringstream(std::string(buffer, bytes)));
-//			delete[] buffer;
+			delete[] buffer;
 			do_session(socket);
 		}
 	});
