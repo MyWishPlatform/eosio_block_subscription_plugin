@@ -19,7 +19,7 @@ namespace eosio {
 		};
 
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
-		std::set<client_t*> clients;
+		std::vector<client_t*> clients;
 		tcp_server server;
 		std::mutex mutex;
 
@@ -62,7 +62,7 @@ namespace eosio {
 							.last_block = from_block
 						};
 						this->mutex.lock();
-						this->clients.insert(client);
+						this->clients.push_back(client);
 						this->mutex.unlock();
 						ilog("client '" + socket->remote_endpoint().address().to_string() + "' subscribed to blocks");
 						break;
@@ -72,28 +72,23 @@ namespace eosio {
 			this->server.on_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
 				ilog("on_disconnect");
 				this->mutex.lock();
-				ilog("1");
-				for (auto it = this->clients.begin(); it != this->clients.end(); it++) {
-					ilog("2");
-					if ((*it)->socket == socket) {
-						ilog("3");
-//						delete *it;
-						ilog("4");
-						this->clients.erase(it);
+				this->clients.erase(std::remove_if(this->clients.begin(), this->clients.end(), [socket](client_t* client) {
+					ilog("1");
+					if (client->socket == socket) {
+						ilog("2");
 						ilog("client '" + socket->remote_endpoint().address().to_string() + "' unsubscribed from blocks");
-						break;
-						ilog("5");
+						delete client;
+						return true;
 					}
-					ilog("6");
-				}
-				ilog("7");
+					ilog("3");
+					return false;
+				}), this->clients.end());
 				this->mutex.unlock();
 				ilog("~on_disconnect");
 			});
 		}
 
 		void on_block(chain::signed_block& block) {
-			ilog("on_block");
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
@@ -109,7 +104,6 @@ namespace eosio {
 				});
 			} catch (...) {}
 			this->mutex.unlock();
-			ilog("~on_block");
 		}
 	};
 
