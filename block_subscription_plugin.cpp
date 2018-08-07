@@ -19,10 +19,12 @@ namespace eosio {
 			std::string addr;
 		};
 
+		chain_plugin& chain_plugin_ref;
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
 		std::vector<client_t*> clients;
 		tcp_server server;
 		std::mutex mutex;
+		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
 
 		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
@@ -33,16 +35,39 @@ namespace eosio {
 			);
 		}
 
-	public:
-		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
-		chain_plugin& chain_plugin_ref;
+		void on_block(chain::signed_block& block) {
+			this->mutex.lock();
+			try {
+				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
+					uint32_t from_block = client->last_block+1;
+					uint32_t to_block = block.block_num();
+					bool ready = (to_block - from_block) < CHUNK_SIZE;
+					if (!ready) to_block = from_block + CHUNK_SIZE;
+					for (uint32_t i = from_block; i < to_block; i++) {
+						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
+					}
+					if (ready) this->server.send(client->socket, this->block_to_json(block));
+					client->last_block = to_block - !ready;
+				});
+			} catch (...) {}
+			this->mutex.unlock();
+		}
 
+	public:
 		block_subscription_plugin_impl() :
-			resolver([](const account_name& name) {
+			chain_plugin_ref(app().get_plugin<chain_plugin>()),
+			resolver([this](const account_name& name) -> fc::optional<abi_serializer> {
+				const chain::account_object* account = this->chain_plugin_ref.chain().db().find<chain::account_object, chain::by_name>(name);
+				auto time = this->chain_plugin_ref.get_abi_serializer_max_time();
+				if (account != nullptr) {
+					abi_def abi;
+					if (abi_serializer::to_abi(account->abi, abi)) {
+						return abi_serializer(abi, time);
+					}
+				}
 				return fc::optional<abi_serializer>();
 			}),
-			server(app().get_io_service(), 56732), // TODO: load port from config
-			chain_plugin_ref(app().get_plugin<chain_plugin>())
+			server(app().get_io_service(), 56732) // TODO: load port from config
 		{
 			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
@@ -85,22 +110,16 @@ namespace eosio {
 			});
 		}
 
-		void on_block(chain::signed_block& block) {
-			this->mutex.lock();
-			try {
-				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
-					uint32_t from_block = client->last_block+1;
-					uint32_t to_block = block.block_num();
-					bool ready = (to_block - from_block) < CHUNK_SIZE;
-					if (!ready) to_block = from_block + CHUNK_SIZE;
-					for (uint32_t i = from_block; i < to_block; i++) {
-						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
-					}
-					if (ready) this->server.send(client->socket, this->block_to_json(block));
-					client->last_block = to_block - !ready;
-				});
-			} catch (...) {}
-			this->mutex.unlock();
+		void init() {
+			this->accepted_block_connection.emplace(
+				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
+					this->on_block(*bsp->block);
+				})
+			);
+		}
+
+		void destroy() {
+			this->accepted_block_connection.reset();
 		}
 	};
 
@@ -116,14 +135,10 @@ namespace eosio {
 
 	void block_subscription_plugin::plugin_startup() {
 		ilog("starting block_subscription_plugin");
-		my->accepted_block_connection.emplace(
-			my->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
-				my->on_block(*bsp->block);
-			})
-		);
+		my->init();
 	}
 
 	void block_subscription_plugin::plugin_shutdown() {
-		my->accepted_block_connection.reset();
+		my->destroy();
 	}
 }
