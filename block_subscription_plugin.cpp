@@ -15,7 +15,7 @@ namespace eosio {
 	private:
 		struct client_t {
 			boost::asio::ip::tcp::socket* const socket;
-			uint32_t last_block;
+			int32_t last_block;
 			std::string addr;
 		};
 
@@ -39,11 +39,11 @@ namespace eosio {
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
-					uint32_t from_block = client->last_block+1;
-					uint32_t to_block = block.block_num();
+					int32_t from_block = client->last_block+1;
+					int32_t to_block = block.block_num();
 					bool ready = (to_block - from_block) < CHUNK_SIZE;
 					if (!ready) to_block = from_block + CHUNK_SIZE;
-					for (uint32_t i = from_block; i < to_block; i++) {
+					for (int32_t i = from_block; i < to_block; i++) {
 						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
 					if (ready) this->server.send(client->socket, this->block_to_json(block));
@@ -77,8 +77,8 @@ namespace eosio {
 						for (client_t* client : this->clients) {
 							if (client->socket == socket) return;
 						}
-						uint32_t last_block = this->chain_plugin_ref.chain().fork_db_head_block_num();
-						uint32_t from_block;
+						int32_t last_block = this->chain_plugin_ref.chain().fork_db_head_block_num();
+						int32_t from_block;
 						data >> from_block;
 						if (from_block > last_block || from_block == 0) {
 							from_block = last_block;
