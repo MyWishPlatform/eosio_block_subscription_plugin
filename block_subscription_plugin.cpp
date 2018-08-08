@@ -24,7 +24,7 @@ namespace eosio {
 		std::vector<client_t*> clients;
 		tcp_server server;
 		std::mutex mutex;
-		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
+		fc::optional<boost::signals2::scoped_connection> irreversible_block_connection;
 
 		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
@@ -111,15 +111,15 @@ namespace eosio {
 		}
 
 		void init() {
-			this->accepted_block_connection.emplace(
-				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
+			this->irreversible_block_connection.emplace(
+				this->chain_plugin_ref.chain().irreversible_block.connect([this](const auto& bsp) {
 					this->on_block(*bsp->block);
 				})
 			);
 		}
 
 		void destroy() {
-			this->accepted_block_connection.reset();
+			this->irreversible_block_connection.reset();
 		}
 	};
 
