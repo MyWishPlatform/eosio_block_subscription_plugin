@@ -79,7 +79,7 @@ namespace eosio {
 						int32_t last_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 						int32_t from_block;
 						data >> from_block;
-						if (from_block > last_block || from_block == 0) {
+						if (from_block == 0) {
 							from_block = last_block;
 						}
 						client_t* client = new client_t{
