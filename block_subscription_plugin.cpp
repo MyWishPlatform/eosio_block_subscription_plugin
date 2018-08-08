@@ -77,7 +77,7 @@ namespace eosio {
 						for (client_t* client : this->clients) {
 							if (client->socket == socket) return;
 						}
-						int32_t last_block = this->chain_plugin_ref.chain().fork_db_head_block_num();
+						int32_t last_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 						int32_t from_block;
 						data >> from_block;
 						if (from_block > last_block || from_block == 0) {
