@@ -46,7 +46,7 @@ namespace eosio {
 					for (int32_t i = from_block; i <= to_block; i++) {
 						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
-					client->last_block = to_block;
+					client->last_block = std::max(client->last_block, to_block);
 				});
 			} catch (...) {}
 			this->mutex.unlock();
