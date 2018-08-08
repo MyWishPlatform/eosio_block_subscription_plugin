@@ -6,7 +6,7 @@
 #include <fc/io/json.hpp>
 #include "tcp_server.hpp"
 
-#define CHUNK_SIZE 100
+#define CHUNK_SIZE 500
 
 namespace eosio {
 	static appbase::abstract_plugin& _block_subscription_plugin = app().register_plugin<block_subscription_plugin>();
@@ -41,6 +41,7 @@ namespace eosio {
 				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
 					int32_t from_block = client->last_block+1;
 					int32_t to_block = block.block_num();
+					ilog("got irreversible: " + std::to_string(to_block));
 					bool ready = (to_block - from_block) < CHUNK_SIZE;
 					if (!ready) to_block = from_block + CHUNK_SIZE;
 					for (int32_t i = from_block; i < to_block; i++) {
