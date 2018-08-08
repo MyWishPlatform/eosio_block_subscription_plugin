@@ -24,7 +24,7 @@ namespace eosio {
 		std::vector<client_t*> clients;
 		tcp_server server;
 		std::mutex mutex;
-		fc::optional<boost::signals2::scoped_connection> irreversible_block_connection;
+		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
 
 		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
@@ -35,20 +35,18 @@ namespace eosio {
 			);
 		}
 
-		void on_block(chain::signed_block& block) {
+		void on_block() {
 			this->mutex.lock();
 			try {
-				std::for_each(this->clients.begin(), this->clients.end(), [this, block](client_t* client) {
+				std::for_each(this->clients.begin(), this->clients.end(), [this](client_t* client) {
 					int32_t from_block = client->last_block+1;
-					int32_t to_block = block.block_num();
+					int32_t to_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 					ilog("got irreversible: " + std::to_string(to_block));
-					bool ready = (to_block - from_block) < CHUNK_SIZE;
-					if (!ready) to_block = from_block + CHUNK_SIZE;
-					for (int32_t i = from_block; i < to_block; i++) {
+					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
+					for (int32_t i = from_block; i <= to_block; i++) {
 						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
-					if (ready) this->server.send(client->socket, this->block_to_json(block));
-					client->last_block = to_block - !ready;
+					client->last_block = to_block;
 				});
 			} catch (...) {}
 			this->mutex.unlock();
@@ -112,15 +110,15 @@ namespace eosio {
 		}
 
 		void init() {
-			this->irreversible_block_connection.emplace(
-				this->chain_plugin_ref.chain().irreversible_block.connect([this](const auto& bsp) {
-					this->on_block(*bsp->block);
+			this->accepted_block_connection.emplace(
+				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
+					this->on_block();
 				})
 			);
 		}
 
 		void destroy() {
-			this->irreversible_block_connection.reset();
+			this->accepted_block_connection.reset();
 		}
 	};
 
