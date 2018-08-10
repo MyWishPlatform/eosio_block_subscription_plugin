@@ -114,7 +114,7 @@ namespace eosio {
 			);
 		}
 
-		~block_subscription_plugin_impl(uint16_t port) :
+		~block_subscription_plugin_impl() :
 			this->accepted_block_connection.reset();
 		}
 	};
@@ -124,7 +124,9 @@ namespace eosio {
 	block_subscription_plugin::~block_subscription_plugin() {}
 
 	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {
-		
+		cfg.add_options()
+			("block-subscription-port", bpo::value<uint16_t>()->default_value(56732),
+			"Port to listen to");
 	}
 
 	void block_subscription_plugin::plugin_initialize(const variables_map& options) {
@@ -133,9 +135,7 @@ namespace eosio {
 		this->my = new block_subscription_plugin_impl(port);
 	}
 
-	void block_subscription_plugin::plugin_startup() {
-		ilog("starting block_subscription_plugin");
-	}
+	void block_subscription_plugin::plugin_startup() {}
 
 	void block_subscription_plugin::plugin_shutdown() {
 		delete this->my;
