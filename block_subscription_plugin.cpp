@@ -66,7 +66,7 @@ namespace eosio {
 				}
 				return fc::optional<abi_serializer>();
 			}),
-			server(app().get_io_service(), port) // TODO: load port from config
+			server(app().get_io_service(), port)
 		{
 			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
