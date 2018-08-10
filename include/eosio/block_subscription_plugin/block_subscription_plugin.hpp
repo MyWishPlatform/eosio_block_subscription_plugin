@@ -17,6 +17,6 @@ namespace eosio {
 		void plugin_shutdown();
 
 	private:
-		std::unique_ptr<class block_subscription_plugin_impl> my;
+		class block_subscription_plugin_impl* my;
 	};
 }

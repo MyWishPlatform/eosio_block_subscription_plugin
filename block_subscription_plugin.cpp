@@ -53,7 +53,7 @@ namespace eosio {
 		}
 
 	public:
-		block_subscription_plugin_impl() :
+		block_subscription_plugin_impl(uint16_t port) :
 			chain_plugin_ref(app().get_plugin<chain_plugin>()),
 			resolver([this](const account_name& name) -> fc::optional<abi_serializer> {
 				const chain::account_object* account = this->chain_plugin_ref.chain().db().find<chain::account_object, chain::by_name>(name);
@@ -66,7 +66,7 @@ namespace eosio {
 				}
 				return fc::optional<abi_serializer>();
 			}),
-			server(app().get_io_service(), 56732) // TODO: load port from config
+			server(app().get_io_service(), port) // TODO: load port from config
 		{
 			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
@@ -107,9 +107,6 @@ namespace eosio {
 				}), this->clients.end());
 				this->mutex.unlock();
 			});
-		}
-
-		void init() {
 			this->accepted_block_connection.emplace(
 				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
 					this->on_block();
@@ -117,27 +114,30 @@ namespace eosio {
 			);
 		}
 
-		void destroy() {
+		~block_subscription_plugin_impl(uint16_t port) :
 			this->accepted_block_connection.reset();
 		}
 	};
 
-	block_subscription_plugin::block_subscription_plugin() :
-		my(new block_subscription_plugin_impl())
-	{}
+	block_subscription_plugin::block_subscription_plugin() {}
 
-	block_subscription_plugin::~block_subscription_plugin(){}
+	block_subscription_plugin::~block_subscription_plugin() {}
 
-	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {}
+	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {
+		
+	}
 
-	void block_subscription_plugin::plugin_initialize(const variables_map& options) {}
+	void block_subscription_plugin::plugin_initialize(const variables_map& options) {
+		uint16_t port = options["block-subscription-port"].as<uint16_t>();
+		ilog("starting block_subscription_plugin at port " + std::to_string(port));
+		this->my = new block_subscription_plugin_impl(port);
+	}
 
 	void block_subscription_plugin::plugin_startup() {
 		ilog("starting block_subscription_plugin");
-		my->init();
 	}
 
 	void block_subscription_plugin::plugin_shutdown() {
-		my->destroy();
+		delete this->my;
 	}
 }
