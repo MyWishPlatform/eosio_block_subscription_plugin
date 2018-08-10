@@ -114,7 +114,7 @@ namespace eosio {
 			);
 		}
 
-		~block_subscription_plugin_impl() :
+		~block_subscription_plugin_impl() {
 			this->accepted_block_connection.reset();
 		}
 	};
