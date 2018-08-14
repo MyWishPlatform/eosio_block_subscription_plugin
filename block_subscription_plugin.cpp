@@ -42,7 +42,7 @@ namespace eosio {
 					int32_t from_block = client->last_block+1;
 					int32_t to_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
-					if (to>block >= from_block) {
+					if (to_block >= from_block) {
 						ilog("sending blocks #" + std::to_string(from_block) + " - " + std::to_string(to_block) + " to client '" + client->addr + "'");
 					}
 					for (int32_t i = from_block; i <= to_block; i++) {
