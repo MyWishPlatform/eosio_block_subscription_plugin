@@ -48,6 +48,7 @@ namespace eosio {
 					int32_t from_block = client->last_block+1;
 					int32_t to_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
+					if (to_block >= from_block) ilog("Sending #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'");
 					for (int32_t i = from_block; i <= to_block; i++) {
 						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
@@ -83,7 +84,8 @@ namespace eosio {
 			}),
 			server(app().get_io_service(), port)
 		{
-			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
+			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::string string, std::stringstream data) {
+				ilog(string);
 				char msg;
 				data >> msg;
 				switch (msg) {
@@ -119,7 +121,7 @@ namespace eosio {
 						this->mutex.lock();
 						this->clients_irreversible.push_back(client);
 						this->mutex.unlock();
-						ilog("client '" + client->addr + "' subscribed to irreversible blocks");
+						ilog("client '" + client->addr + "' subscribed to irreversible blocks from block '" + std::to_string(from_block) + "'");
 						break;
 					}
 				}
