@@ -11,12 +11,13 @@ void tcp_server::do_accept() {
 	});
 }
 
-void tcp_server::process_input(char** input, int* input_len) {
+void tcp_server::process_input(boost::asio::ip::tcp::socket* const socket, char** input, int* input_len) {
 	bool done = true;
 	for (int i = 0; i < *input_len; i++) {
 		if ((*input)[i] == '\n') {
 			done = false;
-			this->message_handler(socket, std::string(*input, i), std::stringstream(std::string(*input, i)));
+			std::string input_str(*input, i);
+			this->message_handler(socket, input_str, std::stringstream(input_str));
 			char* new_input = new char[*input_len - i - 1];
 			std::memcpy(new_input, (*input)+i + 1, *input_len - i - 1);
 			*input_len = *input_len - i - 1;
@@ -25,32 +26,34 @@ void tcp_server::process_input(char** input, int* input_len) {
 			break;
 		}
 	}
-	if (!done) this->process_input(input, input_len);
+	if (!done) this->process_input(socket, input, input_len);
 }
 
 void tcp_server::do_session(boost::asio::ip::tcp::socket* const socket, char* input, int input_len) {
 	char* buffer = new char[BUFFER_SIZE];
-	socket->async_receive(boost::asio::buffer(buffer, BUFFER_SIZE), 0, [this, socket, buffer, &input, &input_len](boost::system::error_code err, size_t bytes) {
+	socket->async_receive(boost::asio::buffer(buffer, BUFFER_SIZE), 0, [this, socket, buffer, input, input_len](boost::system::error_code err, size_t bytes) {
+		int _input_len = input_len;
+		char* _input = input;
 		if (err == boost::asio::error::eof || err == boost::asio::error::connection_reset) {
 			delete[] buffer;
 			this->disconnect_handler(socket);
 			delete socket;
 		} else {
-			if (input_len == 0) {
-				input_len = bytes;
-				input = new char[bytes];
-				memcpy(input, buffer, bytes);
+			if (_input_len == 0) {
+				_input_len = bytes;
+				_input = new char[bytes];
+				memcpy(_input, buffer, bytes);
 			} else {
-				char* new_input = new char[input_len + bytes];
-				std::memcpy(new_input, input, input_len);
-				std::memcpy(new_input + input_len, buffer, bytes);
-				input_len += bytes;
-				delete[] input;
-				input = new_input;
+				char* new_input = new char[_input_len + bytes];
+				std::memcpy(new_input, _input, _input_len);
+				std::memcpy(new_input + _input_len, buffer, bytes);
+				_input_len += bytes;
+				delete[] _input;
+				_input = new_input;
 			}
-			process_input(&input, &input_len);
+			process_input(socket, &_input, &_input_len);
 			delete[] buffer;
-			do_session(socket, input, input_len);
+			do_session(socket, _input, _input_len);
 		}
 	});
 }
