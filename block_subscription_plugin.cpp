@@ -54,7 +54,9 @@ namespace eosio {
 						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
 				});
-			} catch (...) {}
+			} catch(const std::exception& e) {
+				ilog(e.what());
+			}
 			this->mutex.unlock();
 		}
 
