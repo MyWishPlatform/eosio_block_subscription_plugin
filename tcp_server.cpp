@@ -11,6 +11,23 @@ void tcp_server::do_accept() {
 	});
 }
 
+void tcp_server::process_input(char** input, int* input_len) {
+	bool done = true;
+	for (int i = 0; i < *input_len; i++) {
+		if ((*input)[i] == '\n') {
+			done = false;
+			this->message_handler(socket, std::string(*input, i), std::stringstream(std::string(*input, i)));
+			char* new_input = new char[*input_len - i - 1];
+			std::memcpy(new_input, (*input)+i + 1, *input_len - i - 1);
+			*input_len = *input_len - i - 1;
+			delete[] *input;
+			*input = new_input;
+			break;
+		}
+	}
+	if (!done) this->process_input(input, input_len);
+}
+
 void tcp_server::do_session(boost::asio::ip::tcp::socket* const socket, char* input, int input_len) {
 	char* buffer = new char[BUFFER_SIZE];
 	socket->async_receive(boost::asio::buffer(buffer, BUFFER_SIZE), 0, [this, socket, buffer, &input, &input_len](boost::system::error_code err, size_t bytes) {
@@ -31,17 +48,7 @@ void tcp_server::do_session(boost::asio::ip::tcp::socket* const socket, char* in
 				delete[] input;
 				input = new_input;
 			}
-			for (int i = 0; i < input_len; i++) {
-				if (input[i] == '\n') {
-					this->message_handler(socket, std::string(input, i), std::stringstream(std::string(input, i)));
-					char* new_input = new char[input_len - i];
-					std::memcpy(new_input, input+i, input_len - i);
-					input_len -= i;
-					delete[] input;
-					input = new_input;
-					break;
-				}
-			}
+			process_input(&input, &input_len);
 			delete[] buffer;
 			do_session(socket, input, input_len);
 		}

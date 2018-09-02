@@ -8,6 +8,7 @@ private:
 	std::function<void(boost::asio::ip::tcp::socket* const, std::string, std::stringstream)> message_handler;
 	std::function<void(boost::asio::ip::tcp::socket* const)> disconnect_handler;
 
+	void process_input(char** input, int* input_len);
 	void do_accept();
 	void do_session(boost::asio::ip::tcp::socket* socket, char* input = nullptr, int input_len = 0);
 
