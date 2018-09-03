@@ -37,5 +37,4 @@ Add to config.ini:
 block-subscription-port = 56731 # If you need other port than default 56732
 ...
 plugin = eosio::block_subscription_plugin
-
 ```
