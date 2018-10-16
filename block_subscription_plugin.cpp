@@ -29,6 +29,7 @@ namespace eosio {
 		std::vector<client_irreversible_t*> clients_irreversible;
 		std::vector<client_accepted_t*> clients_accepted;
 		tcp_server server;
+		boost::asio::deadline_timer timer;
 		std::mutex mutex;
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
 
@@ -84,7 +85,8 @@ namespace eosio {
 				}
 				return fc::optional<abi_serializer>();
 			}),
-			server(app().get_io_service(), port)
+			server(app().get_io_service(), port),
+			timer(app().get_io_service(), boost::posix_time::seconds(1))
 		{
 			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::string string, std::stringstream data) {
 				ilog(string);
@@ -150,10 +152,18 @@ namespace eosio {
 			});
 			this->accepted_block_connection.emplace(
 				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
-					this->on_irreversible_block();
 					this->on_accepted_block(*bsp->block);
 				})
 			);
+			this->send_irreversible();
+		}
+
+		void send_irreversible() {
+			this->timer.expires_from_now(boost::posix_time::seconds(1));
+			this->timer.async_wait([&](auto err) {
+				this->on_irreversible_block();
+				this->send_irreversible();
+			});
 		}
 
 		~block_subscription_plugin_impl() {
