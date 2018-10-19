@@ -29,6 +29,7 @@ namespace eosio {
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
 		std::vector<client_irreversible_t*> clients_irreversible;
 		std::vector<client_accepted_t*> clients_accepted;
+		uint32_t interval;
 		boost::asio::deadline_timer timer;
 		std::mutex mutex;
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
@@ -72,7 +73,7 @@ namespace eosio {
 		}
 
 	public:
-		block_subscription_plugin_impl() :
+		block_subscription_plugin_impl(uint32_t interval) :
 			chain_plugin_ref(app().get_plugin<chain_plugin>()),
 			tcp_plugin_ref(app().get_plugin<tcp_plugin>()),
 			resolver([this](const account_name& name) -> fc::optional<abi_serializer> {
@@ -86,7 +87,8 @@ namespace eosio {
 				}
 				return fc::optional<abi_serializer>();
 			}),
-			timer(app().get_io_service(), boost::posix_time::seconds(1))
+			interval(interval),
+			timer(app().get_io_service(), boost::posix_time::seconds(interval))
 		{
 			this->tcp_plugin_ref.add_callback_msg([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
@@ -158,7 +160,7 @@ namespace eosio {
 		}
 
 		void send_irreversible() {
-			this->timer.expires_from_now(boost::posix_time::seconds(1));
+			this->timer.expires_from_now(boost::posix_time::milliseconds(this->interval));
 			this->timer.async_wait([&](auto err) {
 				this->on_irreversible_block();
 				this->send_irreversible();
@@ -174,11 +176,16 @@ namespace eosio {
 
 	block_subscription_plugin::~block_subscription_plugin() {}
 
-	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {}
+	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {
+		cfg.add_options()
+			("block-subscription-interval", bpo::value<uint32_t>()->default_value(1000),
+			"Port to listen to");
+	}
 
 	void block_subscription_plugin::plugin_initialize(const variables_map& options) {
+		uint32_t interval = options["block-subscription-interval"].as<uint32_t>();
 		ilog("starting block_subscription_plugin");
-		this->my = new block_subscription_plugin_impl();
+		this->my = new block_subscription_plugin_impl(interval);
 	}
 
 	void block_subscription_plugin::plugin_startup() {}
