@@ -1,10 +1,10 @@
 #include <eosio/block_subscription_plugin/block_subscription_plugin.hpp>
 #include <eosio/chain_plugin/chain_plugin.hpp>
+#include <eosio/tcp_plugin/tcp_plugin.hpp>
 #include <eosio/chain/plugin_interface.hpp>
 #include <eosio/chain/block.hpp>
 #include <boost/signals2/connection.hpp>
 #include <fc/io/json.hpp>
-#include "tcp_server.hpp"
 
 #define CHUNK_SIZE 500
 
@@ -25,10 +25,10 @@ namespace eosio {
 		};
 
 		chain_plugin& chain_plugin_ref;
+		tcp_plugin& tcp_plugin_ref;
 		std::function<fc::optional<abi_serializer>(const account_name&)> resolver;
 		std::vector<client_irreversible_t*> clients_irreversible;
 		std::vector<client_accepted_t*> clients_accepted;
-		tcp_server server;
 		boost::asio::deadline_timer timer;
 		std::mutex mutex;
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
@@ -52,7 +52,7 @@ namespace eosio {
 					client->last_block = std::max(client->last_block, to_block);
 					if (to_block >= from_block) ilog("Sending #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
 					for (int32_t i = from_block; i <= to_block; i++) {
-						this->server.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
+						this->tcp_plugin_ref.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
 					}
 				});
 			} catch(const std::exception& e) {
@@ -65,15 +65,16 @@ namespace eosio {
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients_accepted.begin(), this->clients_accepted.end(), [this, block](client_accepted_t* client) {
-					this->server.send(client->socket, this->block_to_json(block));
+					this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
 				});
 			} catch (...) {}
 			this->mutex.unlock();
 		}
 
 	public:
-		block_subscription_plugin_impl(uint16_t port) :
+		block_subscription_plugin_impl() :
 			chain_plugin_ref(app().get_plugin<chain_plugin>()),
+			tcp_plugin_ref(app().get_plugin<tcp_plugin>()),
 			resolver([this](const account_name& name) -> fc::optional<abi_serializer> {
 				const chain::account_object* account = this->chain_plugin_ref.chain().db().find<chain::account_object, chain::by_name>(name);
 				auto time = this->chain_plugin_ref.get_abi_serializer_max_time();
@@ -85,11 +86,9 @@ namespace eosio {
 				}
 				return fc::optional<abi_serializer>();
 			}),
-			server(app().get_io_service(), port),
 			timer(app().get_io_service(), boost::posix_time::seconds(1))
 		{
-			this->server.on_message([this](boost::asio::ip::tcp::socket* const socket, std::string string, std::stringstream data) {
-				ilog(string);
+			this->tcp_plugin_ref.add_callback_msg([this](boost::asio::ip::tcp::socket* const socket, std::stringstream data) {
 				char msg;
 				data >> msg;
 				switch (msg) {
@@ -130,7 +129,7 @@ namespace eosio {
 					}
 				}
 			});
-			this->server.on_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
+			this->tcp_plugin_ref.add_callback_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
 				this->mutex.lock();
 				this->clients_irreversible.erase(std::remove_if(this->clients_irreversible.begin(), this->clients_irreversible.end(), [socket](client_irreversible_t* client) {
 					if (client->socket == socket) {
@@ -175,16 +174,11 @@ namespace eosio {
 
 	block_subscription_plugin::~block_subscription_plugin() {}
 
-	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {
-		cfg.add_options()
-			("block-subscription-port", bpo::value<uint16_t>()->default_value(56732),
-			"Port to listen to");
-	}
+	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {}
 
 	void block_subscription_plugin::plugin_initialize(const variables_map& options) {
-		uint16_t port = options["block-subscription-port"].as<uint16_t>();
-		ilog("starting block_subscription_plugin at port " + std::to_string(port));
-		this->my = new block_subscription_plugin_impl(port);
+		ilog("starting block_subscription_plugin");
+		this->my = new block_subscription_plugin_impl();
 	}
 
 	void block_subscription_plugin::plugin_startup() {}
