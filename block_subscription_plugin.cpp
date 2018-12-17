@@ -49,12 +49,18 @@ namespace eosio {
 
 		void on_irreversible_block() {
 			this->mutex.lock();
+			std::vector<client_irreversible_t*> clients_irreversible(this->clients_accepted);
+			this->mutex.unlock();
+
 			try {
-				std::for_each(this->clients_irreversible.begin(), this->clients_irreversible.end(), [this](client_irreversible_t* client) {
+				std::for_each(clients_irreversible.begin(), clients_irreversible.end(), [this](client_irreversible_t* client) {
 					int32_t from_block = client->last_block + 1;
 					int32_t to_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
 
-					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
+					if (to_block - from_block >= CHUNK_SIZE) {
+						to_block = from_block + CHUNK_SIZE;
+					}
+
 					client->last_block = std::max(client->last_block, to_block);
 					if (to_block >= from_block) {
                   ilog("Sending ${fromBlock} - ${toBlock} to client '${addr}'; client's last_block now is ${lastBlock}",
@@ -78,19 +84,20 @@ namespace eosio {
 			} catch(const std::exception& e) {
 				elog(e.what());
 			}
-			this->mutex.unlock();
 		}
 
 		void on_accepted_block(const chain::signed_block_ptr block) {
 			this->mutex.lock();
+			std::vector<client_accepted_t*> clients_accepted(this->clients_accepted);
+			this->mutex.unlock();
+
 			try {
-				std::for_each(this->clients_accepted.begin(), this->clients_accepted.end(), [this, block](client_accepted_t* client) {
+				std::for_each(clients_accepted.begin(), clients_accepted.end(), [this, block](client_accepted_t* client) {
 					this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
 				});
 			} catch (const std::exception& e) {
             elog(e.what());
          }
-			this->mutex.unlock();
 		}
 
 	public:
