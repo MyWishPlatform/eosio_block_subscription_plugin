@@ -36,13 +36,13 @@ namespace eosio {
 
 		std::string block_to_json(const chain::signed_block_ptr block) const {
 			fc::variant output;
-			ilog("try to serialize to variant block ${blockId}", ("blockId", block.block_num()));
+//			ilog("try to serialize to variant block ${blockId}", ("blockId", block.block_num()));
 			abi_serializer::to_variant(*block, output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
-         ilog("try to serialize variant to json ${blockId}", ("blockId", block.block_num()));
+//         ilog("try to serialize variant to json ${blockId}", ("blockId", block.block_num()));
 
          return fc::json::to_string(fc::mutable_variant_object(output.get_object())
-				("id", block.id())
-				("block_num", block.block_num())
+				("id", block->id())
+				("block_num", block->block_num())
 				("ref_block_prefix", block->id()._hash[1])
 			);
 		}
