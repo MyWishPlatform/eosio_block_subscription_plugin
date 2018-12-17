@@ -65,12 +65,10 @@ namespace eosio {
 					ilog("Sent #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
 				});
 			} catch(const std::exception& e) {
-				ilog(e.what());
+				elog(e.what());
 			}
 			this->mutex.unlock();
 		}
-
-		void
 
 		void on_accepted_block(const chain::signed_block& block) {
 			this->mutex.lock();
@@ -79,7 +77,7 @@ namespace eosio {
 					this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
 				});
 			} catch (const std::exception& e) {
-            ilog(e.what());
+            elog(e.what());
          }
 			this->mutex.unlock();
 		}
