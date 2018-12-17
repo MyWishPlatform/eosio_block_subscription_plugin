@@ -47,14 +47,22 @@ namespace eosio {
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients_irreversible.begin(), this->clients_irreversible.end(), [this](client_irreversible_t* client) {
-					int32_t from_block = client->last_block+1;
+					int32_t from_block = client->last_block + 1;
 					int32_t to_block = this->chain_plugin_ref.chain().last_irreversible_block_num();
+
 					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
 					client->last_block = std::max(client->last_block, to_block);
-					if (to_block >= from_block) ilog("Sending #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
+					if (to_block >= from_block) {
+                  ilog("Sending #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
+               }
 					for (int32_t i = from_block; i <= to_block; i++) {
-						this->tcp_plugin_ref.send(client->socket, this->block_to_json(*this->chain_plugin_ref.chain().fetch_block_by_number(i)));
+					   ilog("Getting #{blockNo}", ("blockNo", i));
+                  chain::signed_block& block = *this->chain_plugin_ref.chain().fetch_block_by_number(i);
+                  ilog("Got #{blockNo}, Sending it to the client.", ("blockNo", i));
+						this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
+                  ilog("Sent it to the client.");
 					}
+					ilog("Sent #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
 				});
 			} catch(const std::exception& e) {
 				ilog(e.what());
@@ -62,13 +70,17 @@ namespace eosio {
 			this->mutex.unlock();
 		}
 
+		void
+
 		void on_accepted_block(const chain::signed_block& block) {
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients_accepted.begin(), this->clients_accepted.end(), [this, block](client_accepted_t* client) {
 					this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
 				});
-			} catch (...) {}
+			} catch (const std::exception& e) {
+            ilog(e.what());
+         }
 			this->mutex.unlock();
 		}
 
@@ -131,6 +143,7 @@ namespace eosio {
 					}
 				}
 			});
+
 			this->tcp_plugin_ref.add_callback_disconnect([this](boost::asio::ip::tcp::socket* const socket) {
 				this->mutex.lock();
 				this->clients_irreversible.erase(std::remove_if(this->clients_irreversible.begin(), this->clients_irreversible.end(), [socket](client_irreversible_t* client) {
@@ -151,11 +164,13 @@ namespace eosio {
 				}), this->clients_accepted.end());
 				this->mutex.unlock();
 			});
+
 			this->accepted_block_connection.emplace(
 				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
 					this->on_accepted_block(*bsp->block);
 				})
 			);
+
 			this->send_irreversible();
 		}
 
@@ -178,8 +193,7 @@ namespace eosio {
 
 	void block_subscription_plugin::set_program_options(options_description&, options_description& cfg) {
 		cfg.add_options()
-			("block-subscription-interval", bpo::value<uint32_t>()->default_value(1000),
-			"Port to listen to");
+			("block-subscription-interval", bpo::value<uint32_t>()->default_value(1000), "Port to listen to");
 	}
 
 	void block_subscription_plugin::plugin_initialize(const variables_map& options) {
