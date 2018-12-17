@@ -49,7 +49,7 @@ namespace eosio {
 
 		void on_irreversible_block() {
 			this->mutex.lock();
-			std::vector<client_irreversible_t*> clients_irreversible = this->clients_accepted;
+			std::vector<client_irreversible_t*> clients_irreversible(this->clients_irreversible);
 			this->mutex.unlock();
 
 			try {
@@ -88,7 +88,7 @@ namespace eosio {
 
 		void on_accepted_block(const chain::signed_block_ptr block) {
 			this->mutex.lock();
-			std::vector<client_accepted_t*> clients_accepted = this->clients_accepted;
+			std::vector<client_accepted_t*> clients_accepted(this->clients_accepted);
 			this->mutex.unlock();
 
 			try {
