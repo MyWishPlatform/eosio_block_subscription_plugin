@@ -34,14 +34,16 @@ namespace eosio {
 		std::mutex mutex;
 		fc::optional<boost::signals2::scoped_connection> accepted_block_connection;
 
-		std::string block_to_json(const chain::signed_block& block) const {
+		std::string block_to_json(const chain::signed_block_ptr block) const {
 			fc::variant output;
 			ilog("try to serialize to variant block ${blockId}", ("blockId", block.block_num()));
-			abi_serializer::to_variant(block, output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
+			abi_serializer::to_variant(*block, output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
          ilog("try to serialize variant to json ${blockId}", ("blockId", block.block_num()));
-			return fc::json::to_string(fc::mutable_variaunt_object(output.get_object())
+
+         return fc::json::to_string(fc::mutable_variant_object(output.get_object())
 				("id", block.id())
 				("block_num", block.block_num())
+				("ref_block_prefix", block->id()._hash[1])
 			);
 		}
 
@@ -63,7 +65,7 @@ namespace eosio {
                   		);
                }
 					for (int32_t i = from_block; i <= to_block; i++) {
-                  chain::signed_block& block = *this->chain_plugin_ref.chain().fetch_block_by_number(i);
+                  chain::signed_block_ptr block = this->chain_plugin_ref.chain().fetch_block_by_number(i);
 						this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
 					}
 					ilog("Sent ${fromBlock} - ${toBlock} to client '${addr}'; client's last_block now is ${lastBlock}",
@@ -79,7 +81,7 @@ namespace eosio {
 			this->mutex.unlock();
 		}
 
-		void on_accepted_block(const chain::signed_block& block) {
+		void on_accepted_block(const chain::signed_block_ptr block) {
 			this->mutex.lock();
 			try {
 				std::for_each(this->clients_accepted.begin(), this->clients_accepted.end(), [this, block](client_accepted_t* client) {
@@ -174,7 +176,7 @@ namespace eosio {
 
 			this->accepted_block_connection.emplace(
 				this->chain_plugin_ref.chain().accepted_block.connect([this](const auto& bsp) {
-					this->on_accepted_block(*bsp->block);
+					this->on_accepted_block(bsp->block);
 				})
 			);
 
