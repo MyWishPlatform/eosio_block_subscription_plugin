@@ -36,8 +36,10 @@ namespace eosio {
 
 		std::string block_to_json(const chain::signed_block& block) const {
 			fc::variant output;
+			ilog("try to serialize to variant block ${blockId}", ("blockId", block.block_num()));
 			abi_serializer::to_variant(block, output, this->resolver, this->chain_plugin_ref.get_abi_serializer_max_time());
-			return fc::json::to_string(fc::mutable_variant_object(output.get_object())
+         ilog("try to serialize variant to json ${blockId}", ("blockId", block.block_num()));
+			return fc::json::to_string(fc::mutable_variaunt_object(output.get_object())
 				("id", block.id())
 				("block_num", block.block_num())
 			);
@@ -53,16 +55,23 @@ namespace eosio {
 					if (to_block - from_block >= CHUNK_SIZE) to_block = from_block + CHUNK_SIZE;
 					client->last_block = std::max(client->last_block, to_block);
 					if (to_block >= from_block) {
-                  ilog("Sending #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
+                  ilog("Sending ${fromBlock} - ${toBlock} to client '${addr}'; client's last_block now is ${lastBlock}",
+                  		("fromBlock", std::to_string(from_block))
+                  		("toBlock", std::to_string(to_block))
+                  		("addr", client->addr)
+                  		("lastBlock", std::to_string(client->last_block))
+                  		);
                }
 					for (int32_t i = from_block; i <= to_block; i++) {
-					   ilog("Getting #{blockNo}", ("blockNo", i));
                   chain::signed_block& block = *this->chain_plugin_ref.chain().fetch_block_by_number(i);
-                  ilog("Got #{blockNo}, Sending it to the client.", ("blockNo", i));
 						this->tcp_plugin_ref.send(client->socket, this->block_to_json(block));
-                  ilog("Sent it to the client.");
 					}
-					ilog("Sent #" + std::to_string(from_block) + " - #" + std::to_string(to_block) + " to client '" + client->addr + "'; client's last_block now is #" + std::to_string(client->last_block) + "'");
+					ilog("Sent ${fromBlock} - ${toBlock} to client '${addr}'; client's last_block now is ${lastBlock}",
+                     ("fromBlock", std::to_string(from_block))
+                             ("toBlock", std::to_string(to_block))
+                             ("addr", client->addr)
+                             ("lastBlock", std::to_string(client->last_block))
+                );
 				});
 			} catch(const std::exception& e) {
 				elog(e.what());
